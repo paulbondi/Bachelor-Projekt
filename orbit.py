@@ -53,14 +53,3 @@ plt.grid(True)
 plt.show()
 
 
-'''
-# Join the filtered lines into a single string
-data_string = "".join(filtered_lines)
-
-# io.StringIO treats the string as a file opened in memory
-data_io = io.StringIO(data_string)
-cols_to_use = np.arange(6, 102, 6)
-full_data = np.genfromtxt(filtered_lines, dtype=None, delimiter='\t')
-#filtered_data_generic = full_data[full_data[:, 1] == 'rv']
-'''
-
