@@ -1,5 +1,5 @@
 Questions:
-- File Format
+- Error handling
 - Comment Format (compared to ScopeSym)
 - What to do with Star 111? (hyperbolic orbit)
 
