@@ -1,13 +1,20 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scopesim as ss
+from astropy.table import Table
+from scopesim.source import source
 
-filename = "../../Documents/Studium/Astro/BAccArbeit/table3.dat.txt"
+filename = "table3.dat.txt"
 full_data = np.loadtxt(filename, usecols=range(1,15))
 eligible_stars = [0, 1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 15, 17, 19, 22, 24]
 full_names_val = np.loadtxt(filename, usecols=0, dtype=str)
+full_spectral_val = np.loadtxt(filename, usecols=15, dtype=str)
+full_kmag_val = np.loadtxt(filename, usecols=16)
 data = full_data[eligible_stars, :]
 
 names_val = full_names_val[eligible_stars]
+spectral_val = full_spectral_val[eligible_stars]
+kmag_val = full_kmag_val[eligible_stars]
 a_val = data[:,0] # semi-major axis a [arcsec]
 a_unc = data[:,1]
 e_val = data[:,2] # eccentricity
@@ -24,7 +31,8 @@ Per_val = data[:,12] # period [yr]
 Per_unc = data[:,13]
 
 t0 = 2017
-t = np.linspace(2000, 2100, 200)
+t = np.linspace(1992, 2016, 200)
+t_obs = float(input("time: "))
 dt = t - t0
 
 # Newton-Raphson Method für kepler glg: M = E - e*sin(E)
@@ -65,15 +73,47 @@ def orbitalVelocity(t, a, e, i, Omega, w, Tp, Per):
     return v
 '''
 
+def scopesimTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, Per_arr):
+    x_pos = []
+    y_pos = []
+
+    for id in range(len(names_arr)):
+        x, y, z = orbitalPosition(t_obs, a_arr[id], e_arr[id], i_arr[id], Omega_arr[id], w_arr[id], Tp_arr[id], Per_arr[id])
+
+        x_pos.append(x)
+        y_pos.append(y)
+
+    table = Table({
+        'name': names_arr,
+        'x': x_pos,
+        'y': y_pos,
+        'magnitude': kmag_val,
+        'spec_type': spectral_val
+    })
+    table['x'].unit = 'arcsec'
+    table['y'].unit = 'arcsec'
+    return table
+scope_table = scopesimTable(t_obs, names_val, a_val, e_val, i_val, Omega_val, w_val, Tp_val, Per_val)
+
+'''
+TO-DO: 
+-- create scopesim simulation
+-- compare with calculation results
+'''
+
+
+
 # position plot
 for val in range(len(names_val)):
     x, y, z = orbitalPosition(t, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val], Per_val[val])
     plt.plot(x, y)
+    plt.scatter(scope_table['x'][val], scope_table['y'][val], marker='o')
     #plt.plot(x, y, marker='+', label=f'S{val+1}') # for legend containing every name and scatter
 
 #plt.scatter(x, y, label='S 1-39', s=5, color='steelblue')
 #plt.plot(x, y, label='S 1-39', color='steelblue')
 plt.scatter(0, 0, color='black', marker='+', label='Sgr A*')
+
 plt.xlabel('R.A. ["]')
 plt.ylabel('Dec. ["]')
 plt.tight_layout()
