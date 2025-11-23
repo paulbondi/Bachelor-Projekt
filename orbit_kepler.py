@@ -177,7 +177,7 @@ for i, (mx, my) in enumerate(measrued_pos):
     print(f"{orbit_table['ref'][i]}:")
     print(f"  true:     ({orbit_table['x'][i]: .5f}, {orbit_table['y'][i]: .5f}) arcsec")
     print(f"  measured: ({mx: .5f}, {my: .5f}) arcsec")
-    print(f"  error:    ({mx - orbit_table['x'][i]: .5f}, {my - orbit_table['y'][i]: .5f}) arcsec")
+    print(f"  error:    ({np.abs(mx - orbit_table['x'][i]): .5f}, {np.abs(my - orbit_table['y'][i]): .5f}) arcsec")
     print()
 
     plt.scatter(orbit_table['x'][i], orbit_table['y'][i], marker='x')
@@ -194,7 +194,7 @@ plt.grid(True)
 plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(names_val), fontsize=7)
 plt.show()
 
-'''
+
 # spectral plot
 color_map = {'e': 'blue', 'l': 'red'}
 star_colors = [color_map[t] for t in orbit_table["type"]]
@@ -209,7 +209,7 @@ ax.set_facecolor('black')
 
 plt.scatter(orbit_table['x'], orbit_table['y'], s=star_sizes * 0.2, c='white', alpha=1.0, zorder=10)
 plt.show()
-'''
+
 '''
 # velocity plot
 for val in range(len(names_val)):
