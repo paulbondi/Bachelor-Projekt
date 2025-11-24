@@ -87,7 +87,7 @@ def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, 
         y_pos.append(y)
 
     table = Table(
-        names=["x", "y", "ref", "weight", "type"],
+        names=["x", "y", "ref", "mag", "type"],
         data=[x_pos, y_pos, names_arr, kmag_val, spectral_val],
         units=[u.arcsec, u.arcsec, None, None, None]
     )
@@ -194,14 +194,14 @@ plt.grid(True)
 plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(names_val), fontsize=7)
 plt.show()
 
-
+'''
 # spectral plot
 color_map = {'e': 'blue', 'l': 'red'}
 star_colors = [color_map[t] for t in orbit_table["type"]]
-min_mag = np.min(orbit_table["weight"])
-max_mag = np.max(orbit_table["weight"])
+min_mag = np.min(orbit_table["mag"])
+max_mag = np.max(orbit_table["mag"])
 size_scale_factor = 1200
-star_sizes = size_scale_factor * (max_mag - orbit_table["weight"] + 1) / (max_mag - min_mag + 1)
+star_sizes = size_scale_factor * (max_mag - orbit_table["mag"] + 1) / (max_mag - min_mag + 1)
 
 plt.figure(figsize=(9, 9), facecolor='black')
 ax = plt.gca()
@@ -209,6 +209,7 @@ ax.set_facecolor('black')
 
 plt.scatter(orbit_table['x'], orbit_table['y'], s=star_sizes * 0.2, c='white', alpha=1.0, zorder=10)
 plt.show()
+'''
 
 '''
 # velocity plot
