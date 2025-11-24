@@ -10,3 +10,4 @@ Kepler: Solar System Dynamics, Chapter 2; Carl D. Murray, Stanley F. Dermott / h
 class name: galactic center (star cluster)
 spectral: calculated, measured, gilessen
 time in micado only for header, data doesnt change
+source extractor
