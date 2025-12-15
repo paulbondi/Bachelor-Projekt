@@ -5,6 +5,11 @@ from astropy.table import Table
 from astropy import units as u
 import scopesim as sim
 from scopesim.source import source
+import sep
+import scopesim_templates as sim_tp
+
+from matplotlib.colors import LogNorm
+from matplotlib.patches import Ellipse
 
 
 filename = "table3.dat.txt"
@@ -62,7 +67,7 @@ def orbitalPosition(t, a, e, i, Omega, w, Tp, Per):
     z_ = r * (np.sin(w + f) * np.sin(i))
 
     return x_, y_, z_
-'''
+
 def orbitalVelocity(t, a, e, i, Omega, w, Tp, Per):
     n = 2 * np.pi / Per # mean motion
     M = 2 * np.pi / Per * (t - Tp)  # mean anomaly
@@ -74,7 +79,7 @@ def orbitalVelocity(t, a, e, i, Omega, w, Tp, Per):
     vy = n * a**2 * np.sqrt(1-e**2) * np.cos(E) / r
     v = np.sqrt(vx**2 + vy**2)
     return v
-'''
+
 
 def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, Per_arr, ):
     x_pos = []
@@ -93,125 +98,207 @@ def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, 
     )
     table['x'].unit = 'arcsec'
     table['y'].unit = 'arcsec'
+
+    print(table)
     return table
 orbit_table = orbitTable(t_obs, names_val, a_val, e_val, i_val, Omega_val, w_val, Tp_val, Per_val)
-print(orbit_table)
 
-# position plot
-for val in range(len(names_val)):
-    x, y, z = orbitalPosition(t, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val], Per_val[val])
-    plt.plot(x, y)
-    #plt.plot(x, y, marker='+', label=f'S{val+1}') # for legend containing every name and scatter
+def positionPolt():
+    # position plot
+    for val in range(len(names_val)):
+        x, y, z = orbitalPosition(t, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val], Per_val[val])
+        plt.plot(x, y)
+        #plt.plot(x, y, marker='+', label=f'S{val+1}') # for legend containing every name and scatter
 
-#plt.scatter(x, y, label='S 1-39', s=5, color='steelblue')
-#plt.plot(x, y, label='S 1-39', color='steelblue')
-plt.scatter(0, 0, color='black', marker='+', label='Sgr A*')
+    #plt.scatter(x, y, label='S 1-39', s=5, color='steelblue')
+    plt.plot(x, y, label='S 1-39', color='steelblue')
+    plt.scatter(0, 0, color='black', marker='+', label='Sgr A*')
 
-plt.title('Calculated orbits')
-plt.xlabel('R.A. ["]')
-plt.ylabel('Dec. ["]')
-plt.tight_layout()
-plt.gca().invert_xaxis()
-plt.grid(True)
-plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(names_val), fontsize=7)
+    plt.title('Calculated orbits')
+    plt.xlabel('R.A. ["]')
+    plt.ylabel('Dec. ["]')
+    plt.tight_layout()
+    plt.gca().invert_xaxis()
+    plt.grid(True)
+    plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(names_val), fontsize=7)
+
+    return plt.show()
+
+def simulate():
+    '''
+    -- create scopesim simulation
+    -- compare with calculation results
+    '''
+
+    source = sim.source.source.Source(table=orbit_table)
+
+    #sim.download_packages(["Armazones", "ELT", "MICADO"])
+
+    # from irdb/MICADO/docs/example_notebooks/2_scopesim_SCAO_1.5mas_astrometry.ipynb
+    observation_dict = {
+        "!OBS.filter_name_pupil": "open",
+        "!OBS.filter_name_fw1": "J",
+        "!OBS.filter_name_fw2": "open",
+        "!INST.filter_name": "Pa-beta",
+        "!OBS.ndit": 1,
+        "!OBS.dit": 3600,
+
+        "!OBS.instrument": "MICADO",
+        "!OBS.catg": "SCIENCE",
+        "!OBS.tech": "IMAGE",
+        "!OBS.type": "OBJECT",
+        "!OBS.mjdobs": datetime.datetime(t_obs, 1, 1, 2, 30, 0)
+    }
+
+    cmd = sim.UserCommands(
+        use_instrument="MICADO",
+        set_modes=["SCAO", "IMG_1.5mas"],
+        properties=observation_dict,
+    )
+    cmd["!DET.width"] = 256     # pixel
+    cmd["!DET.height"] = 256
+
+    cmd["!SIM.sub_pixel.flag"] = True
+
+    micado = sim.OpticalTrain(cmd)
+    micado.observe(source)
+    hdus = micado.readout()
+    sim_image = hdus[0][1].data #numpy array
+    return sim_image
+
+
+def comparePlot():
+    # get position in arcsec fom pixels
+    pixel_scale = 0.0015  #
+    measrued_pos = []
+    sim_image = simulate()
+    for x_in, y_in in zip(orbit_table['x'], orbit_table['y']):
+        # Convert arcsec → pixels
+        x_pix = int(sim_image.shape[1] / 2 + x_in / pixel_scale)
+        y_pix = int(sim_image.shape[0] / 2 + y_in / pixel_scale)
+
+        # Convert to arcsec relative to center
+        x_arc = (x_pix - sim_image.shape[1] / 2) * pixel_scale
+        y_arc = (y_pix - sim_image.shape[0] / 2) * pixel_scale
+
+        measrued_pos.append((x_arc, y_arc))
+    # print measured vs calculated
+    measured_pos = simulate()
+    for i, (mx, my) in enumerate(measured_pos):
+        print(f"{orbit_table['ref'][i]}:")
+        print(f"  true:     ({orbit_table['x'][i]: .5f}, {orbit_table['y'][i]: .5f}) arcsec")
+        print(f"  measured: ({mx: .5f}, {my: .5f}) arcsec")
+        print(f"  error:    ({np.abs(mx - orbit_table['x'][i]): .5f}, {np.abs(my - orbit_table['y'][i]): .5f}) arcsec")
+        print()
+
+        plt.scatter(orbit_table['x'][i], orbit_table['y'][i], marker='x', label='calculated')
+        plt.scatter(mx, my, marker='+', label='simulated')
+
+    plt.scatter(0, 0, color='black', marker='+', label='Sgr A*')
+
+    plt.title('Calculated (x) vs Measured (+)')
+    plt.xlabel('R.A. ["]')
+    plt.ylabel('Dec. ["]')
+    plt.tight_layout()
+    plt.gca().invert_xaxis()
+    plt.grid(True)
+    plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(names_val), fontsize=7)
+
+    return plt.show()
+'''
+To-Do:
+- make spectral plot with data
+- make spectral plot with simulation
+- plot both
+'''
+
+def spectralPlotCalc():
+
+    # spectral plot
+    color_map = {'e': 'blue', 'l': 'red'}
+    star_colors = [color_map[t] for t in orbit_table["type"]]
+    min_mag = np.min(orbit_table["mag"])
+    max_mag = np.max(orbit_table["mag"])
+    size_scale_factor = 1200
+    star_sizes = size_scale_factor * (max_mag - orbit_table["mag"] + 1) / (max_mag - min_mag + 1)
+
+    plt.figure(figsize=(9, 9), facecolor='black')
+    ax = plt.gca()
+    ax.set_facecolor('black')
+
+    plt.scatter(orbit_table['x'], orbit_table['y'], s=star_sizes, c='white')
+    plt.show()
+
+    return
+
+def spectralPlotSim():
+
+    sim_image = simulate()
+    plt.figure()
+    image = plt.imshow(sim_image, norm=LogNorm(), origin='lower')
+    plt.colorbar()
+    plt.show()
+    bkg = sep.Background(sim_image)
+    bkg_image = bkg.back()
+    data_sub = sim_image - bkg
+
+    i = 1
+    while True:
+        objects = sep.extract(data_sub,i)
+        if len(objects) <= len(eligible_stars):
+            print(f'i= {i}')
+            break
+        i += 1
+
+    print(len(objects))
+
+    fig, ax = plt.subplots()
+    m, s = np.mean(data_sub), np.std(data_sub)
+    im = ax.imshow(data_sub, interpolation='nearest', cmap='gray',
+                   vmin=m - s, vmax=m + s, origin='lower')
+    for i in range(len(objects)):
+        e = Ellipse(xy=(objects['x'][i], objects['y'][i]),
+                    width=6 * objects['a'][i],
+                    height=6 * objects['b'][i],
+                    angle=objects['theta'][i] * 180. / np.pi)
+        e.set_facecolor('none')
+        e.set_edgecolor('red')
+        ax.add_artist(e)
+    plt.show()
+
+    return
+spectralPlotCalc()
+spectralPlotSim()
+
+
+cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
+
+# EXPTIME = 3600 = ndit * dit
+cmds["!DET.dit"] = 30
+cmds["!DET.ndit"] = 120
+
+micado = sim.OpticalTrain(cmds)
+
+fixed_stars = sim_tp.stellar.stars(filter_name="H",
+                                   amplitudes=orbit_table['mag']*u.mag,       # [u.mag, u.ABmag, u.Jy]
+                                   spec_types=np.full(len(eligible_stars), 'A0V'),
+                                   x=orbit_table['x'], y=orbit_table['y'])    # [u.arcsec]
+
+micado.observe(fixed_stars)
+hdu = micado.readout()[0]
+
+photon_map = micado.image_planes[0].data
+readout_image = hdu[1].data
+
+im = readout_image
+
+plt.figure(figsize=(12,12))
+norm = LogNorm(vmax=1.1 * np.median(im), vmin=0.9 * np.median(im))
+plt.imshow(im, norm=norm)
+plt.colorbar()
 plt.show()
 
 
-'''
--- create scopesim simulation
--- compare with calculation results
-'''
-
-source = sim.source.source.Source(table=orbit_table)
-
-#sim.download_packages(["Armazones", "ELT", "MICADO"])
-
-# from irdb/MICADO/docs/example_notebooks/2_scopesim_SCAO_1.5mas_astrometry.ipynb
-observation_dict = {
-    "!OBS.filter_name_pupil": "open",
-    "!OBS.filter_name_fw1": "J",
-    "!OBS.filter_name_fw2": "open",
-    "!INST.filter_name": "Pa-beta",
-    "!OBS.ndit": 1,
-    "!OBS.dit": 3600,
-
-    "!OBS.instrument": "MICADO",
-    "!OBS.catg": "SCIENCE",
-    "!OBS.tech": "IMAGE",
-    "!OBS.type": "OBJECT",
-    "!OBS.mjdobs": datetime.datetime(2022, 1, 1, 2, 30, 0)
-}
-
-cmd = sim.UserCommands(
-    use_instrument="MICADO",
-    set_modes=["SCAO", "IMG_1.5mas"],
-    properties=observation_dict,
-)
-cmd["!DET.width"] = 256     # pixel
-cmd["!DET.height"] = 256
-
-cmd["!SIM.sub_pixel.flag"] = True
-
-micado = sim.OpticalTrain(cmd)
-micado.observe(source)
-hdus = micado.readout()
-sim_image = hdus[0][1].data #numpy array
-
-# get position in arcsec fom pixels
-pixel_scale = 0.0015 #
-measrued_pos = []
-
-for x_in, y_in in zip(orbit_table['x'], orbit_table['y']):
-    # Convert arcsec → pixels
-    x_pix = int(sim_image.shape[1] / 2 + x_in / pixel_scale)
-    y_pix = int(sim_image.shape[0] / 2 + y_in / pixel_scale)
-
-    # Convert to arcsec relative to center
-    x_arc = (x_pix - sim_image.shape[1] / 2) * pixel_scale
-    y_arc = (y_pix - sim_image.shape[0] / 2) * pixel_scale
-
-    measrued_pos.append((x_arc, y_arc))
-
-# print measured vs calculated
-for i, (mx, my) in enumerate(measrued_pos):
-    print(f"{orbit_table['ref'][i]}:")
-    print(f"  true:     ({orbit_table['x'][i]: .5f}, {orbit_table['y'][i]: .5f}) arcsec")
-    print(f"  measured: ({mx: .5f}, {my: .5f}) arcsec")
-    print(f"  error:    ({np.abs(mx - orbit_table['x'][i]): .5f}, {np.abs(my - orbit_table['y'][i]): .5f}) arcsec")
-    print()
-
-    plt.scatter(orbit_table['x'][i], orbit_table['y'][i], marker='x')
-    plt.scatter(mx, my, marker='+')
-
-plt.scatter(0, 0, color='black', marker='+', label='Sgr A*')
-
-plt.title('Calculated (x) vs Measured (+)')
-plt.xlabel('R.A. ["]')
-plt.ylabel('Dec. ["]')
-plt.tight_layout()
-plt.gca().invert_xaxis()
-plt.grid(True)
-plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(names_val), fontsize=7)
-plt.show()
-
-'''
-# spectral plot
-color_map = {'e': 'blue', 'l': 'red'}
-star_colors = [color_map[t] for t in orbit_table["type"]]
-min_mag = np.min(orbit_table["mag"])
-max_mag = np.max(orbit_table["mag"])
-size_scale_factor = 1200
-star_sizes = size_scale_factor * (max_mag - orbit_table["mag"] + 1) / (max_mag - min_mag + 1)
-
-plt.figure(figsize=(9, 9), facecolor='black')
-ax = plt.gca()
-ax.set_facecolor('black')
-
-plt.scatter(orbit_table['x'], orbit_table['y'], s=star_sizes * 0.2, c='white', alpha=1.0, zorder=10)
-plt.show()
-'''
-
-'''
 # velocity plot
 for val in range(len(names_val)):
     v = orbitalVelocity(t, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val], Per_val[val])
@@ -222,5 +309,3 @@ plt.ylabel(r'$V_{LSR}$ [km/s]')
 plt.tight_layout()
 plt.grid(True)
 plt.show()
-'''
-

@@ -7,15 +7,7 @@ import scopesim as sim
 from scopesim.source import source
 
 filename = "table3.dat.txt"
-full_data = np.loadtxt(filename, usecols=range(1,15))
-eligible_stars = [0, 1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 15, 17, 19, 22, 24]
-full_names_val = np.loadtxt(filename, usecols=0, dtype=str)
-full_spectral_val = np.loadtxt(filename, usecols=15, dtype=str)
-full_kmag_val = np.loadtxt(filename, usecols=16)
-data = full_data[eligible_stars, :]
 
-t_obs = 2022
-t = np.linspace(2000, 2020, 200)
 
 class MyClass:
     def __init__(self, filename, data, t):
@@ -84,9 +76,11 @@ class MyClass:
         )
         table['x'].unit = 'arcsec'
         table['y'].unit = 'arcsec'
+
+        print(table)
         return table
 
-    def simulate(self):
+    def simulate(self, t_obs):
         '''
         - Simulates MICADO observation
         - converts pixel data to RA and DEC
@@ -110,7 +104,7 @@ class MyClass:
             "!OBS.catg": "SCIENCE",
             "!OBS.tech": "IMAGE",
             "!OBS.type": "OBJECT",
-            "!OBS.mjdobs": datetime.datetime(2022, 1, 1, 2, 30, 0)
+            "!OBS.mjdobs": datetime.datetime(t_obs, 1, 1, 2, 30, 0)
         }
 
         cmd = sim.UserCommands(
@@ -127,25 +121,9 @@ class MyClass:
         micado.observe(source)
         hdus = micado.readout()
         sim_image = hdus[0][1].data  # numpy array
+        return sim_image
 
-        # get position in arcsec fom pixels
-        pixel_scale = 0.0015  #
-        measrued_pos = []
-
-        for x_in, y_in in zip(orbit_table['x'], orbit_table['y']):
-            # Convert arcsec → pixels
-            x_pix = int(sim_image.shape[1] / 2 + x_in / pixel_scale)
-            y_pix = int(sim_image.shape[0] / 2 + y_in / pixel_scale)
-
-            # Convert to arcsec relative to center
-            x_arc = (x_pix - sim_image.shape[1] / 2) * pixel_scale
-            y_arc = (y_pix - sim_image.shape[0] / 2) * pixel_scale
-
-            measrued_pos.append((x_arc, y_arc))
-
-        return measrued_pos
-
-    def plotter(self):
+    def positionPlot(self):
         for val in range(len(self.names_val)):
             x, y, z = self.orbitalPosition(self.t, self.a_val[val], self.e_val[val], self.i_val[val],
                                            self.Omega_val[val], self.w_val[val], self.Tp_val[val],
@@ -164,8 +142,21 @@ class MyClass:
         plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(self.names_val), fontsize=7)
         return plt.show()
 
-    def comparePlot(self):
-        measured_pos = self.simulate()
+    def comparePlot(self, t_obs):
+        pixel_scale = 0.0015  #
+        measured_pos = []
+        sim_image = self.simulate(t_obs)
+        for x_in, y_in in zip(orbit_table['x'], orbit_table['y']):
+            # Convert arcsec → pixels
+            x_pix = int(sim_image.shape[1] / 2 + x_in / pixel_scale)
+            y_pix = int(sim_image.shape[0] / 2 + y_in / pixel_scale)
+
+            # Convert to arcsec relative to center
+            x_arc = (x_pix - sim_image.shape[1] / 2) * pixel_scale
+            y_arc = (y_pix - sim_image.shape[0] / 2) * pixel_scale
+
+            measured_pos.append((x_arc, y_arc))
+
         for i, (mx, my) in enumerate(measured_pos):
             print(f"{orbit_table['ref'][i]}:")
             print(f"  true:     ({orbit_table['x'][i]: .5f}, {orbit_table['y'][i]: .5f}) arcsec")
@@ -188,11 +179,69 @@ class MyClass:
 
         return plt.show()
 
+    def velocityPlot(self):
+        # velocity plot
+        for val in range(len(names_val)):
+            v = orbitalVelocity(t, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val],
+                                Per_val[val])
+            plt.plot(t, v)
 
+        plt.xlabel('t [yr]')
+        plt.ylabel(r'$V_{LSR}$ [km/s]')
+        plt.tight_layout()
+        plt.grid(True)
+
+        return plt.show()
+
+    def spectralPlotCalc(self):
+
+        # spectral plot
+        color_map = {'e': 'blue', 'l': 'red'}
+        star_colors = [color_map[t] for t in orbit_table["type"]]
+        min_mag = np.min(orbit_table["mag"])
+        max_mag = np.max(orbit_table["mag"])
+        size_scale_factor = 1200
+        star_sizes = size_scale_factor * (max_mag - orbit_table["mag"] + 1) / (max_mag - min_mag + 1)
+
+        plt.figure(figsize=(9, 9), facecolor='black')
+        ax = plt.gca()
+        ax.set_facecolor('black')
+
+        plt.scatter(orbit_table['x'], orbit_table['y'], s=star_sizes, c='white')
+        plt.show()
+
+        return
+
+full_data = np.loadtxt(filename, usecols=range(1,15))
+eligible_stars = [0, 1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 15, 17, 19, 22, 24]
+full_names_val = np.loadtxt(filename, usecols=0, dtype=str)
+full_spectral_val = np.loadtxt(filename, usecols=15, dtype=str)
+full_kmag_val = np.loadtxt(filename, usecols=16)
+data = full_data[eligible_stars, :]
+
+t_obs = 2022
+t = np.linspace(2000, 2020, 200)
+
+names_val = full_names_val[eligible_stars]
+spectral_val = full_spectral_val[eligible_stars]
+kmag_val = full_kmag_val[eligible_stars]
+a_val = data[:,0] # semi-major axis a [arcsec]
+a_unc = data[:,1]
+e_val = data[:,2] # eccentricity
+e_unc = data[:,3]
+i_val = data[:,4] # inclination [deg]
+i_unc = data[:,5]
+Omega_val = data[:,6] # angle of ascending node W [deg]
+Omega_unc = data[:,7]
+w_val = data[:,8] # longitude of pericenter w [deg]
+w_unc = data[:,9]
+Tp_val = data[:,10] # epoch of pericentre passage [yr]
+Tp_unc = data[:,11]
+Per_val = data[:,12] # period [yr]
+Per_unc = data[:,13]
 
 
 x = MyClass(filename, data, t)
-x.plotter()
+x.positionPlot()
 orbit_table = x.orbitTable()
-print(orbit_table)
-x.comparePlot()
+x.comparePlot(t_obs)
