@@ -132,7 +132,7 @@ def simulate():
 
     source = sim.source.source.Source(table=orbit_table)
 
-    #sim.download_packages(["Armazones", "ELT", "MICADO"])
+    # sim.download_packages(["Armazones", "ELT", "MICADO"])
 
     # from irdb/MICADO/docs/example_notebooks/2_scopesim_SCAO_1.5mas_astrometry.ipynb
     observation_dict = {
@@ -170,7 +170,7 @@ def simulate():
 def comparePlot():
     # get position in arcsec fom pixels
     pixel_scale = 0.0015  #
-    measrued_pos = []
+    measured_pos = []
     sim_image = simulate()
     for x_in, y_in in zip(orbit_table['x'], orbit_table['y']):
         # Convert arcsec → pixels
@@ -181,9 +181,9 @@ def comparePlot():
         x_arc = (x_pix - sim_image.shape[1] / 2) * pixel_scale
         y_arc = (y_pix - sim_image.shape[0] / 2) * pixel_scale
 
-        measrued_pos.append((x_arc, y_arc))
+        measured_pos.append((x_arc, y_arc))
     # print measured vs calculated
-    measured_pos = simulate()
+    
     for i, (mx, my) in enumerate(measured_pos):
         print(f"{orbit_table['ref'][i]}:")
         print(f"  true:     ({orbit_table['x'][i]: .5f}, {orbit_table['y'][i]: .5f}) arcsec")
@@ -267,10 +267,13 @@ def spectralPlotSim():
     plt.show()
 
     return
+
+positionPolt()
+comparePlot()
 spectralPlotCalc()
 spectralPlotSim()
 
-
+'''
 cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
 
 # EXPTIME = 3600 = ndit * dit
@@ -297,7 +300,7 @@ norm = LogNorm(vmax=1.1 * np.median(im), vmin=0.9 * np.median(im))
 plt.imshow(im, norm=norm)
 plt.colorbar()
 plt.show()
-
+'''
 
 # velocity plot
 for val in range(len(names_val)):
