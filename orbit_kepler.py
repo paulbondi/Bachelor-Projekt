@@ -80,7 +80,6 @@ def orbitalVelocity(t, a, e, i, Omega, w, Tp, Per):
     v = np.sqrt(vx**2 + vy**2)
     return v
 
-
 def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, Per_arr, ):
     x_pos = []
     y_pos = []
@@ -105,24 +104,56 @@ orbit_table = orbitTable(t_obs, names_val, a_val, e_val, i_val, Omega_val, w_val
 
 def positionPolt():
     # position plot
+    fig, ax = plt.subplots()
+
+    line_objects = []
+
     for val in range(len(names_val)):
         x, y, z = orbitalPosition(t, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val], Per_val[val])
-        plt.plot(x, y)
-        #plt.plot(x, y, marker='+', label=f'S{val+1}') # for legend containing every name and scatter
+        line, = ax.plot(x,y, label=names_val[val], linewidth=1.5)
+        line_objects.append(line)
 
-    #plt.scatter(x, y, label='S 1-39', s=5, color='steelblue')
-    plt.plot(x, y, label='S 1-39', color='steelblue')
-    plt.scatter(0, 0, color='black', marker='+', label='Sgr A*')
+    ax.scatter(0, 0, color='black', marker='+')
 
-    plt.title('Calculated orbits')
-    plt.xlabel('R.A. ["]')
-    plt.ylabel('Dec. ["]')
-    plt.tight_layout()
-    plt.gca().invert_xaxis()
-    plt.grid(True)
-    plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(names_val), fontsize=7)
+    ax.set_title('Calculated orbits')
+    ax.set_xlabel('R.A. ["]')
+    ax.set_ylabel('Dec. ["]')
+
+    ax.invert_xaxis()
+    ax.grid(True)
+
+    leg = ax.legend(
+        loc = 'upper center',
+        bbox_to_anchor=(0.0, -0.05, 1.0, 0.1),
+        ncol = len(names_val),
+        mode = 'expand',
+        frameon = False,
+        fontsize = 8,
+        handlelength = 0,
+        handletextpad = 0,
+        borderaxespad=0
+    )
+
+    for line, text in zip(line_objects, leg.get_texts()):
+        curr_color = line.get_color()
+        text.set_color(curr_color)
+
+
 
     return plt.show()
+
+def velocityPlot():
+    for val in range(len(names_val)):
+        v = orbitalVelocity(t, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val],
+                            Per_val[val])
+        plt.plot(t, v)
+
+    plt.xlabel('t [yr]')
+    plt.ylabel(r'$V_{LSR}$ [km/s]')
+    plt.tight_layout()
+    plt.grid(True)
+    plt.show()
+    return
 
 def simulate():
     '''
@@ -166,24 +197,26 @@ def simulate():
     sim_image = hdus[0][1].data #numpy array
     return sim_image
 
-
 def comparePlot():
     # get position in arcsec fom pixels
     pixel_scale = 0.0015  #
-    measrued_pos = []
+    measured_pos = []
     sim_image = simulate()
     for x_in, y_in in zip(orbit_table['x'], orbit_table['y']):
         # Convert arcsec → pixels
-        x_pix = int(sim_image.shape[1] / 2 + x_in / pixel_scale)
-        y_pix = int(sim_image.shape[0] / 2 + y_in / pixel_scale)
+        x_pix = sim_image.shape[1] / 2 + x_in / pixel_scale
+        y_pix = sim_image.shape[0] / 2 + y_in / pixel_scale
 
         # Convert to arcsec relative to center
         x_arc = (x_pix - sim_image.shape[1] / 2) * pixel_scale
         y_arc = (y_pix - sim_image.shape[0] / 2) * pixel_scale
 
-        measrued_pos.append((x_arc, y_arc))
+        measured_pos.append((x_arc, y_arc))
     # print measured vs calculated
-    measured_pos = simulate()
+
+    fig, ax = plt.subplots()
+    line1_objects = []
+
     for i, (mx, my) in enumerate(measured_pos):
         print(f"{orbit_table['ref'][i]}:")
         print(f"  true:     ({orbit_table['x'][i]: .5f}, {orbit_table['y'][i]: .5f}) arcsec")
@@ -191,26 +224,49 @@ def comparePlot():
         print(f"  error:    ({np.abs(mx - orbit_table['x'][i]): .5f}, {np.abs(my - orbit_table['y'][i]): .5f}) arcsec")
         print()
 
-        plt.scatter(orbit_table['x'][i], orbit_table['y'][i], marker='x', label='calculated')
-        plt.scatter(mx, my, marker='+', label='simulated')
+        ax1 = ax.scatter(orbit_table['x'][i], orbit_table['y'][i], marker='x', label=orbit_table['ref'][i])
+        color = ax1.get_facecolor()[0]
+        ax2 = ax.scatter(mx, my, marker='+', color=color)
+        line1_objects.append(ax1)
 
-    plt.scatter(0, 0, color='black', marker='+', label='Sgr A*')
 
-    plt.title('Calculated (x) vs Measured (+)')
-    plt.xlabel('R.A. ["]')
-    plt.ylabel('Dec. ["]')
-    plt.tight_layout()
-    plt.gca().invert_xaxis()
-    plt.grid(True)
-    plt.legend(bbox_to_anchor=(0, 0), loc='lower left', ncol=len(names_val), fontsize=7)
+    ax.scatter(0, 0, color='black', marker='+')
 
-    return plt.show()
-'''
-To-Do:
-- make spectral plot with data
-- make spectral plot with simulation
-- plot both
-'''
+    ax.set_title('Calculated (x) vs Measured (+)')
+    ax.set_xlabel('R.A. ["]')
+    ax.set_ylabel('Dec. ["]')
+
+    ax.invert_xaxis()
+    ax.grid(True)
+
+    legend1 = ax.legend(
+        loc='upper center',
+        bbox_to_anchor=(0.0, -0.05, 1.0, 0.1),
+        ncol=len(names_val),
+        mode='expand',
+        frameon=False,
+        fontsize=8,
+        handlelength=0,
+        handletextpad=0,
+        borderaxespad=0
+    )
+    for handle in legend1.legend_handles:
+        handle.set_visible(False)
+
+    for line, text in zip(line1_objects, legend1.get_texts()):
+        curr_color = line.get_facecolor()[0]
+        text.set_color(curr_color)
+    ax.add_artist(legend1)
+
+    marker_handles = [
+        ax.scatter([], [], marker='x', linestyle="None", label="Calculated", color='black'),
+        ax.scatter([], [], marker='+', linestyle="None", label="Measured", color='black')
+        ]
+    ax.legend(handles=marker_handles,
+        loc='upper right',
+    )
+    plt.show()
+    return
 
 def spectralPlotCalc():
 
@@ -232,80 +288,32 @@ def spectralPlotCalc():
     return
 
 def spectralPlotSim():
+    cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
 
-    sim_image = simulate()
-    plt.figure()
-    image = plt.imshow(sim_image, norm=LogNorm(), origin='lower')
+    # EXPTIME = 3600 = ndit * dit
+    cmds["!DET.dit"] = 30
+    cmds["!DET.ndit"] = 120
+
+    micado = sim.OpticalTrain(cmds)
+
+    fixed_stars = sim_tp.stellar.stars(filter_name="H",
+                                       amplitudes=orbit_table['mag'] * u.mag,  # [u.mag, u.ABmag, u.Jy]
+                                       spec_types=np.full(len(eligible_stars), 'A0V'),
+                                       x=orbit_table['x'], y=orbit_table['y'])  # [u.arcsec]
+
+    micado.observe(fixed_stars)
+    hdu = micado.readout()[0]
+
+    readout_image = hdu[1].data
+
+    im = readout_image
+
+    plt.figure(figsize=(12, 12))
+
+    plt.imshow(im, norm='log', cmap='gray')
     plt.colorbar()
     plt.show()
-    bkg = sep.Background(sim_image)
-    bkg_image = bkg.back()
-    data_sub = sim_image - bkg
-
-    i = 1
-    while True:
-        objects = sep.extract(data_sub,i)
-        if len(objects) <= len(eligible_stars):
-            print(f'i= {i}')
-            break
-        i += 1
-
-    print(len(objects))
-
-    fig, ax = plt.subplots()
-    m, s = np.mean(data_sub), np.std(data_sub)
-    im = ax.imshow(data_sub, interpolation='nearest', cmap='gray',
-                   vmin=m - s, vmax=m + s, origin='lower')
-    for i in range(len(objects)):
-        e = Ellipse(xy=(objects['x'][i], objects['y'][i]),
-                    width=6 * objects['a'][i],
-                    height=6 * objects['b'][i],
-                    angle=objects['theta'][i] * 180. / np.pi)
-        e.set_facecolor('none')
-        e.set_edgecolor('red')
-        ax.add_artist(e)
-    plt.show()
-
     return
-spectralPlotCalc()
-spectralPlotSim()
+positionPolt()
+comparePlot()
 
-
-cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
-
-# EXPTIME = 3600 = ndit * dit
-cmds["!DET.dit"] = 30
-cmds["!DET.ndit"] = 120
-
-micado = sim.OpticalTrain(cmds)
-
-fixed_stars = sim_tp.stellar.stars(filter_name="H",
-                                   amplitudes=orbit_table['mag']*u.mag,       # [u.mag, u.ABmag, u.Jy]
-                                   spec_types=np.full(len(eligible_stars), 'A0V'),
-                                   x=orbit_table['x'], y=orbit_table['y'])    # [u.arcsec]
-
-micado.observe(fixed_stars)
-hdu = micado.readout()[0]
-
-photon_map = micado.image_planes[0].data
-readout_image = hdu[1].data
-
-im = readout_image
-
-plt.figure(figsize=(12,12))
-norm = LogNorm(vmax=1.1 * np.median(im), vmin=0.9 * np.median(im))
-plt.imshow(im, norm=norm)
-plt.colorbar()
-plt.show()
-
-
-# velocity plot
-for val in range(len(names_val)):
-    v = orbitalVelocity(t, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val], Per_val[val])
-    plt.plot(t, v)
-
-plt.xlabel('t [yr]')
-plt.ylabel(r'$V_{LSR}$ [km/s]')
-plt.tight_layout()
-plt.grid(True)
-plt.show()
