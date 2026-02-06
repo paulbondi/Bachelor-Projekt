@@ -1,16 +1,14 @@
 import datetime
-import numpy as np
+
 import matplotlib.pyplot as plt
-from astropy.table import Table
-from astropy import units as u
+import numpy as np
 import scopesim as sim
+import scopesim_templates as sim_tp
+from astropy import units as u
+from astropy.table import Table
 from scopesim.source import source
 import sep
-import scopesim_templates as sim_tp
-
-from matplotlib.colors import LogNorm
-from matplotlib.patches import Ellipse
-
+from scipy.interpolate import splprep, splev
 
 filename = "table3.dat.txt"
 full_data = np.loadtxt(filename, usecols=range(1,15))
@@ -80,7 +78,7 @@ def orbitalVelocity(t, a, e, i, Omega, w, Tp, Per):
     v = np.sqrt(vx**2 + vy**2)
     return v
 
-def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, Per_arr, ):
+def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, Per_arr):
     x_pos = []
     y_pos = []
 
@@ -101,6 +99,105 @@ def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, 
     print(table)
     return table
 orbit_table = orbitTable(t_obs, names_val, a_val, e_val, i_val, Omega_val, w_val, Tp_val, Per_val)
+
+def simulate():
+    '''
+    -- create scopesim simulation
+    -- compare with calculation results
+    '''
+
+    #sim.download_packages(["Armazones", "ELT", "MICADO"])
+
+    cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
+
+    # EXPTIME = 3600 = ndit * dit
+    cmds["!DET.dit"] = 30
+    cmds["!DET.ndit"] = 120
+    micado = sim.OpticalTrain(cmds)
+    fixed_stars = sim_tp.stellar.stars(filter_name="H",
+                                       amplitudes=orbit_table['mag'] * u.mag,  # [u.mag, u.ABmag, u.Jy]
+                                       spec_types=np.full(len(eligible_stars), 'A0V'),
+                                       x=orbit_table['x'], y=orbit_table['y'])  # [u.arcsec]
+    micado.observe(fixed_stars)
+    hdus = micado.readout()
+    sim_image = hdus[0][1].data #numpy array
+    return sim_image
+
+def findStars():
+    # get position in arcsec fom pixels
+    pixel_scale = 0.0015  #
+    measured_pos = []
+    im = simulate()
+
+    if not data.dtype.isnative:
+        im = im.byteswap(inplace=True)
+        im = im.view(data.dtype.newbyteorder('='))
+
+    i = 1.0
+    while (True):
+        # Extract
+        bkg = sep.Background(im)
+        sources = sep.extract(im - bkg, i, err=bkg.globalrms)
+        i += 1
+        if (len(sources) == len(eligible_stars)):
+            break
+
+    # Get positions
+    print(f"Found {len(sources)} stars with a SEP threshold: {i}")
+    x, y = sources['x'], sources['y']
+
+    # Step 1: Convert measured positions
+    measured_x = []
+    measured_y = []
+
+    x_ref_pix = im.shape[1] / 2  # image center X
+    y_ref_pix = im.shape[0] / 2  # image center Y
+
+    for x, y in zip(sources['x'], sources['y']):
+        x_arc = (x - x_ref_pix) * pixel_scale
+        y_arc = (y - y_ref_pix) * pixel_scale
+        measured_x.append(x_arc)
+        measured_y.append(y_arc)
+
+    measured_x = np.array(measured_x)
+    measured_y = np.array(measured_y)
+
+    # Compare with calculated positions
+    calc_x = np.array(orbit_table['x'])
+    calc_y = np.array(orbit_table['y'])
+
+    dx_list = []
+    dy_list = []
+    sep_list = []
+
+    # For each measured star, find nearest calculated
+    for mx, my in zip(measured_x, measured_y):
+        distances = np.sqrt((calc_x - mx) ** 2 + (calc_y - my) ** 2)
+        nearest_idx = np.argmin(distances)
+
+        dx_list.append(mx - calc_x[nearest_idx])
+        dy_list.append(my - calc_y[nearest_idx])
+        sep_list.append(distances[nearest_idx])  # ADDED!
+
+    dx = np.array(dx_list)
+    dy = np.array(dy_list)
+    sep_ = np.array(sep_list)
+
+    # Print results
+    for i, (mx, my) in enumerate(zip(measured_x, measured_y)):
+        print(f"{orbit_table['ref'][i]}:")
+        print(f"  true:     ({orbit_table['x'][i]: .5f}, {orbit_table['y'][i]: .5f}) arcsec")
+        print(f"  measured: ({mx: .5f}, {my: .5f}) arcsec")
+        print(f"  error:    ({np.abs(mx - orbit_table['x'][i]): .5f}, {np.abs(my - orbit_table['y'][i]): .5f}) arcsec")
+        print()
+
+    print(f"Matched {len(dx)} stars")
+    print(f"Mean offset: ΔX = {np.mean(dx):.4f} ± {np.std(dx):.4f} arcsec")
+    print(f"             ΔY = {np.mean(dy):.4f} ± {np.std(dy):.4f} arcsec")
+    print(f"RMS error: {np.sqrt(np.mean(sep_ ** 2)):.4f} arcsec")
+    print(f"Median separation: {np.median(sep_):.4f} arcsec")
+
+    return measured_x, measured_y
 
 def positionPolt():
     # position plot
@@ -155,87 +252,23 @@ def velocityPlot():
     plt.show()
     return
 
-def simulate():
-    '''
-    -- create scopesim simulation
-    -- compare with calculation results
-    '''
-
-    source = sim.source.source.Source(table=orbit_table)
-
-    #sim.download_packages(["Armazones", "ELT", "MICADO"])
-
-    # from irdb/MICADO/docs/example_notebooks/2_scopesim_SCAO_1.5mas_astrometry.ipynb
-    observation_dict = {
-        "!OBS.filter_name_pupil": "open",
-        "!OBS.filter_name_fw1": "J",
-        "!OBS.filter_name_fw2": "open",
-        "!INST.filter_name": "Pa-beta",
-        "!OBS.ndit": 1,
-        "!OBS.dit": 3600,
-
-        "!OBS.instrument": "MICADO",
-        "!OBS.catg": "SCIENCE",
-        "!OBS.tech": "IMAGE",
-        "!OBS.type": "OBJECT",
-        "!OBS.mjdobs": datetime.datetime(t_obs, 1, 1, 2, 30, 0)
-    }
-
-    cmd = sim.UserCommands(
-        use_instrument="MICADO",
-        set_modes=["SCAO", "IMG_1.5mas"],
-        properties=observation_dict,
-    )
-    cmd["!DET.width"] = 256     # pixel
-    cmd["!DET.height"] = 256
-
-    cmd["!SIM.sub_pixel.flag"] = True
-
-    micado = sim.OpticalTrain(cmd)
-    micado.observe(source)
-    hdus = micado.readout()
-    sim_image = hdus[0][1].data #numpy array
-    return sim_image
-
 def comparePlot():
-    # get position in arcsec fom pixels
-    pixel_scale = 0.0015  #
-    measured_pos = []
-    sim_image = simulate()
-    for x_in, y_in in zip(orbit_table['x'], orbit_table['y']):
-        # Convert arcsec → pixels
-        x_pix = sim_image.shape[1] / 2 + x_in / pixel_scale
-        y_pix = sim_image.shape[0] / 2 + y_in / pixel_scale
+    measured_x, measured_y = findStars()
 
-        # Convert to arcsec relative to center
-        x_arc = (x_pix - sim_image.shape[1] / 2) * pixel_scale
-        y_arc = (y_pix - sim_image.shape[0] / 2) * pixel_scale
-
-        measured_pos.append((x_arc, y_arc))
-    # print measured vs calculated
-
+    # Print results
     fig, ax = plt.subplots()
     line1_objects = []
 
-    for i, (mx, my) in enumerate(measured_pos):
-        print(f"{orbit_table['ref'][i]}:")
-        print(f"  true:     ({orbit_table['x'][i]: .5f}, {orbit_table['y'][i]: .5f}) arcsec")
-        print(f"  measured: ({mx: .5f}, {my: .5f}) arcsec")
-        print(f"  error:    ({np.abs(mx - orbit_table['x'][i]): .5f}, {np.abs(my - orbit_table['y'][i]): .5f}) arcsec")
-        print()
-
+    for i, (mx, my) in enumerate(zip(measured_x, measured_y)):
         ax1 = ax.scatter(orbit_table['x'][i], orbit_table['y'][i], marker='x', label=orbit_table['ref'][i])
-        color = ax1.get_facecolor()[0]
+        color = ax1.get_facecolor()
         ax2 = ax.scatter(mx, my, marker='+', color=color)
         line1_objects.append(ax1)
 
-
     ax.scatter(0, 0, color='black', marker='+')
-
     ax.set_title('Calculated (x) vs Measured (+)')
     ax.set_xlabel('R.A. ["]')
     ax.set_ylabel('Dec. ["]')
-
     ax.invert_xaxis()
     ax.grid(True)
 
@@ -261,10 +294,10 @@ def comparePlot():
     marker_handles = [
         ax.scatter([], [], marker='x', linestyle="None", label="Calculated", color='black'),
         ax.scatter([], [], marker='+', linestyle="None", label="Measured", color='black')
-        ]
+    ]
     ax.legend(handles=marker_handles,
-        loc='upper right',
-    )
+              loc='upper right',
+              )
     plt.show()
     return
 
@@ -288,32 +321,86 @@ def spectralPlotCalc():
     return
 
 def spectralPlotSim():
-    cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
-
-    # EXPTIME = 3600 = ndit * dit
-    cmds["!DET.dit"] = 30
-    cmds["!DET.ndit"] = 120
-
-    micado = sim.OpticalTrain(cmds)
-
-    fixed_stars = sim_tp.stellar.stars(filter_name="H",
-                                       amplitudes=orbit_table['mag'] * u.mag,  # [u.mag, u.ABmag, u.Jy]
-                                       spec_types=np.full(len(eligible_stars), 'A0V'),
-                                       x=orbit_table['x'], y=orbit_table['y'])  # [u.arcsec]
-
-    micado.observe(fixed_stars)
-    hdu = micado.readout()[0]
-
-    readout_image = hdu[1].data
-
-    im = readout_image
+    im = simulate()
 
     plt.figure(figsize=(12, 12))
-
     plt.imshow(im, norm='log', cmap='gray')
     plt.colorbar()
     plt.show()
     return
-positionPolt()
+
+def orbitFit():
+    cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
+    point = 5
+    t_ = 1990
+    dt = 0
+    measured_x = []
+    measured_y = []
+    points = np.zeros((point, 2))
+
+    while dt < point:
+        t_ += dt
+        table = orbitTable(t_, names_val, a_val, e_val, i_val, Omega_val, w_val, Tp_val, Per_val)
+
+        # EXPTIME = 3600 = ndit * dit
+        cmds["!DET.dit"] = 30
+        cmds["!DET.ndit"] = 120
+        micado = sim.OpticalTrain(cmds)
+        fixed_stars = sim_tp.stellar.stars(filter_name="H",
+                                           amplitudes=table['mag'],  # [u.mag, u.ABmag, u.Jy]
+                                           spec_types=np.full(len(eligible_stars), 'A0V'),
+                                           x=table['x'], y=table['y'])  # [u.arcsec]
+        micado.observe(fixed_stars)
+        hdus = micado.readout()
+        im = hdus[0][1].data  # numpy array
+
+        pixel_scale = 0.0015  #
+
+        if not data.dtype.isnative:
+            im = im.byteswap(inplace=True)
+            im = im.view(data.dtype.newbyteorder('='))
+
+        i = 1.0
+        while (True):
+            # Extract
+            bkg = sep.Background(im)
+            sources = sep.extract(im - bkg, i, err=bkg.globalrms)
+            i += 1
+            if len(sources) == 1:
+                break
+
+        # Get positions
+
+        x, y = sources['x'][0], sources['y'][0]
+
+        # Step 1: Convert measured positions
+
+
+        x_ref_pix = im.shape[1] / 2  # image center X
+        y_ref_pix = im.shape[0] / 2  # image center Y
+
+        for x, y in zip(sources['x'], sources['y']):
+            x_arc = (x - x_ref_pix) * pixel_scale
+            y_arc = (y - y_ref_pix) * pixel_scale
+            points[dt][0] = x_arc
+            points[dt][1] = y_arc
+
+        dt += 1
+
+    print(points)
+    measured_x = np.array(measured_x)
+    measured_y = np.array(measured_y)
+
+
+    # Transpose for splprep
+    x, y = points.T
+
+    # Parametric spline
+    tck, u = splprep([x, y], s=0, k=3)
+
+    # Interpolated orbit
+    u_fine = np.linspace(0, 1, 500)
+    x_i, y_i = splev(u_fine, tck)
+
 comparePlot()
 
