@@ -15,7 +15,6 @@ PIXEL_SCALE = 0.0015        # arcsec per pixel
 SEP_THRESHOLD_MAX = 250
 t_obs = 2030
 
-# Module-level data arrays – populated by load_data()
 names_val = spectral_val = kmag_val = None
 a_val = a_unc = e_val = e_unc = None
 i_val = i_unc = Omega_val = Omega_unc = None
@@ -52,6 +51,12 @@ def load_data(filename="J_ApJ_837_30_table3.dat.fits"):
                              Omega_val, w_val, Tp_val, Per_val)
 
 def resolveStars(star_name=None):
+    '''
+    Assigns the input stars to the corresponding out of the data set.
+
+    :param star_name: None, "all, "S2", "S2, S4, S8"
+    :return: (id, label), (None, None)
+    '''
 
     if star_name is None:
         return np.arange(len(names_val)), "all stars"
@@ -107,15 +112,13 @@ def orbitalPosition(t, a, e, i, Omega, w_, Tp, Per):
     return ra, dec, z_
 
 def orbitalVelocity(t, a, e, i, Omega, w, Tp, Per):
-    # NOTE: returns the scalar orbital-plane speed (arcsec/yr).
-    # The 3D sky-plane projection (rotation by i, Omega, w) is not applied,
-    # so this is the true orbital speed, not the projected radial velocity.
+
     n = 2 * np.pi / Per  # mean motion [rad/yr]
     M = n * (t - Tp)     # mean anomaly
     E = kepler(M, e)     # eccentric anomaly
     r = a * (1 - e * np.cos(E))
-    # vis-viva speed in the orbital plane
-    v = n * a * np.sqrt(1 - e**2 * np.cos(E)**2) / (1 - e * np.cos(E))
+
+    v = n * a * np.sqrt(1 - e**2 * np.cos(E)**2) / (1 - e * np.cos(E)) # vis-viva speed in the orbital plane
     return v
 
 def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, Per_arr,
@@ -168,6 +171,12 @@ def simulate(star_name=None):
     return sim_image
 
 def findStars(star_name=None):
+    '''
+    Run source detection on simulated image
+
+    :param star_name:
+    :return: (measured_x, measured_y)
+    '''
     # get position in arcsec from pixels
     idxs, label = resolveStars(star_name)
     if idxs is None:
@@ -245,8 +254,8 @@ def positionPolt(star_name=None, t_start=None, t_end=None):
     if idxs is None:
         return
 
-    t_start = t_start if t_start is not None else 1992
-    t_end   = t_end   if t_end   is not None else 2012
+    t_start = t_start if t_start is not None else 2030
+    t_end   = t_end   if t_end   is not None else 2050
     t_plot  = np.linspace(t_start, t_end, 200)
 
     fig, ax = plt.subplots()
@@ -382,7 +391,23 @@ def spectralPlotSim(star_name=None):
     return
 
 def findPass(star_name, t_peri, r_peri, a, e, i, Omega, w, Tp, Per, passage_num=None):
-    """Print stats for a single pericentre passage and return (t_peri, r_peri, weekly_dist)."""
+    '''
+    Helper function used by pericentrePass. Computes the 3D weekly displacement vector
+    by evaluating the position half a week before and after, prints a formatted summary.
+
+    :param star_name:
+    :param t_peri:
+    :param r_peri:
+    :param a:
+    :param e:
+    :param i:
+    :param Omega:
+    :param w:
+    :param Tp:
+    :param Per:
+    :param passage_num:
+    :return: (t_peri, r_peri, weekly_dist)
+    '''
     week = 1 / 52.1775  # 1 week in years
     x_before, y_before, z_before = orbitalPosition(t_peri - week / 2, a, e, i, Omega, w, Tp, Per)
     x_after, y_after, z_after = orbitalPosition(t_peri + week / 2, a, e, i, Omega, w, Tp, Per)
@@ -407,6 +432,16 @@ def findPass(star_name, t_peri, r_peri, a, e, i, Omega, w, Tp, Per, passage_num=
     return t_peri, r_peri, weekly_dist
 
 def pericentrePass(star_name, t_start=None, t_end=None):
+    '''
+    Without t_start/t_end: finds the next pericentre passage to the Tp out of the data set.
+    With t_start/t_end: scans every orbital period in interval.
+
+    :param star_name:
+    :param t_start:
+    :param t_end:
+    :return: results from findPass
+    '''
+
 
     matches = np.where(names_val == star_name)[0]
     if len(matches) == 0:
@@ -467,6 +502,13 @@ def pericentrePass(star_name, t_start=None, t_end=None):
     return results
 
 def bestObserving(star_name, t_start, t_end):
+    '''
+    Finds the first pericentre pass for given star in given interval. Print date and results.
+    :param star_name:
+    :param t_start:
+    :param t_end:
+    :return: (t_best, r_best, weekly_dist)
+    '''
     # find star index by name
     matches = np.where(names_val == star_name)[0]
     if len(matches) == 0:
@@ -510,13 +552,20 @@ def bestObserving(star_name, t_start, t_end):
 
     print(f"\n--- Best observing window: {star_name}  [{t_start:.2f} – {t_end:.2f}] ---")
     print(f"  Best time               : {t_best:.4f} yr  ({best_date.strftime('%Y-%m-%d')})")
-    print(f"  Distance at best time   : {r_best:.5f} arcsec  (closest to centre)")
-    print(f"  Distance moved in 1 week: {weekly_dist:.5f} arcsec  (fastest apparent motion)")
+    print(f"  Distance at best time   : {r_best:.5f} arcsec")
+    print(f"  Distance moved in 1 week: {weekly_dist:.5f} arcsec")
     print(f"  Distance range in window: min={r_best:.5f}  mean={r_mean:.5f}  max={r_max:.5f} arcsec")
 
     return t_best, r_best, weekly_dist
 
 def orbitFit(star_name=None):
+    '''
+    Calculates the coefficients for the stars fit using SVD
+    currently set to: # points = 5, t_0 = 2032, dt = 1
+
+    :param star_name:
+    :return:
+    '''
     idxs, label = resolveStars(star_name)
     if idxs is None:
         return
@@ -524,7 +573,48 @@ def orbitFit(star_name=None):
     star_idx = idxs[0]
     print(f"Fitting orbit for: {names_val[star_idx]}")
 
-    x, y = findStars(star_name)
+    cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
+    point = 5
+    points = np.zeros((point, 2))
+
+    for dt in range(point):
+        t_ = 2032 + dt
+        table = orbitTable(t_, names_val, a_val, e_val, i_val, Omega_val, w_val, Tp_val, Per_val)
+
+        # EXPTIME = 3600 = ndit * dit
+        cmds["!DET.dit"] = 30
+        cmds["!DET.ndit"] = 120
+        micado = sim.OpticalTrain(cmds)
+        fixed_stars = sim_tp.stellar.stars(filter_name="H",
+                                           amplitudes=np.atleast_1d(float(table['mag'][star_idx])),
+                                           spec_types=np.full(1, 'A0V'),
+                                           x=np.atleast_1d(float(table['x'][star_idx])),
+                                           y=np.atleast_1d(float(table['y'][star_idx])))
+        micado.observe(fixed_stars)
+        hdus = micado.readout()
+        im = hdus[0][1].data  # numpy array
+
+        if not im.dtype.isnative:
+            im = im.byteswap(inplace=True)
+            im = im.view(im.dtype.newbyteorder('='))
+
+        threshold = 1.0
+        while threshold <= SEP_THRESHOLD_MAX:
+            bkg = sep.Background(im)
+            sources = sep.extract(im - bkg, threshold, err=bkg.globalrms)
+            threshold += 1
+            if len(sources) == 1:
+                break
+        else:
+            print(f"Warning: could not isolate exactly 1 source at t={t_}; got {len(sources)}.")
+
+        x_ref_pix = im.shape[1] / 2
+        y_ref_pix = im.shape[0] / 2
+        points[dt][0] = (sources['x'][0] - x_ref_pix) * PIXEL_SCALE
+        points[dt][1] = (sources['y'][0] - y_ref_pix) * PIXEL_SCALE
+
+    x = points[:, 0]
+    y = points[:, 1]
 
     design_mat = np.stack([x ** 2, x * y, y ** 2, x, y, np.ones_like(x)], axis=1)
 
@@ -534,10 +624,10 @@ def orbitFit(star_name=None):
     residuals = design_mat @ coefficients
     rmse = np.sqrt(np.mean(residuals ** 2))
 
-    A, B, C, D, E, F = coefficients
+    A, B, C, D_coeff, E, F = coefficients
 
     result = {
-        "coeffs": {"A": A, "B": B, "C": C, "D": D, "E": E, "F": F},
+        "coeffs": {"A": A, "B": B, "C": C, "D": D_coeff, "E": E, "F": F},
         "rmse": rmse
     }
     print(result)
@@ -615,4 +705,3 @@ if __name__ == "__main__":
         orbitFit(args.star)
     else:
         parser.print_help()
-    findStars(args.star)
