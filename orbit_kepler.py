@@ -98,16 +98,15 @@ def kepler(M, e, epsilon=1e-9, max_it=1000):
     return E
 
 def orbitalPosition(t, a, e, i, Omega, w_, Tp, Per):
-    w =  w_ - Omega
-    i, Omega, w = np.radians([i, Omega, w])
+    i, Omega, w_ = np.radians([i, Omega, w_])
     M = (2 * np.pi / Per) * (t - Tp) # mean anomaly
     E = kepler(M, e) # eccentric anomaly
     f = 2 * np.arctan(np.sqrt((1 + e) / (1-e)) * np.tan(E / 2)) # true anomaly
     r = a * (1 - e * np.cos(E))
 
-    dec = r * (np.cos(Omega) * np.cos(w_ + f) - np.sin(Omega) * np.sin(w_ + f) * np.cos(i))
-    ra = -r * (np.sin(Omega) * np.cos(w_ + f) + np.cos(Omega) * np.sin(w_ + f) * np.cos(i))
-    z_ = r * (np.sin(w_ + f) * np.sin(i))
+    dec =  r * (np.cos(Omega) * np.cos(w_ + f) - np.sin(Omega) * np.sin(w_ + f) * np.cos(i))
+    ra  = -r * (np.sin(Omega) * np.cos(w_ + f) + np.cos(Omega) * np.sin(w_ + f) * np.cos(i))
+    z_  =  r * (np.sin(w_ + f) * np.sin(i))
 
     return ra, dec, z_
 
@@ -147,7 +146,7 @@ def orbitTable(t_obs, names_arr, a_arr, e_arr, i_arr, Omega_arr, w_arr, Tp_arr, 
     return table
 
 def simulate(star_name=None):
-
+    from scopesim.effects import AnisocadoConstPSF
     #sim.download_packages(["Armazones", "ELT", "MICADO"])
 
     idxs, label = resolveStars(star_name)
@@ -155,12 +154,25 @@ def simulate(star_name=None):
         return None
     tbl = orbit_table[idxs]
 
-    cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
+    wide_psf = AnisocadoConstPSF(name="Wide_SCAO_PSF",
+                                 filename="MICADO/MICADO_AnisoCADO_rms_map.fits",
+                                 strehl=0.5,
+                                 wavelength=2.15,
+                                 psf_side_length=2048,
+                                 offset=[14,14])
 
+    cmds = sim.UserCommands(use_instrument="MICADO", set_modes=["SCAO", "IMG_1.5mas"])
     # EXPTIME = 3600 = ndit * dit
     cmds["!DET.dit"] = 30
     cmds["!DET.ndit"] = 120
+
     micado = sim.OpticalTrain(cmds)
+
+    micado.optics_manager["default_ro"].add_effect(wide_psf)
+
+    micado["relay_psf"].include = False
+    micado["Wide_SCAO_PSF"].include = True
+
     fixed_stars = sim_tp.stellar.stars(filter_name="H",
                                        amplitudes=tbl['mag'] * u.mag,  # [u.mag, u.ABmag, u.Jy]
                                        spec_types=np.full(len(idxs), 'A0V'),
@@ -235,16 +247,16 @@ def findStars(star_name=None):
 
     for i, (mx, my) in enumerate(zip(measured_x, measured_y)):
         print(f"{tbl['ref'][i]}:")
-        print(f"  true:     ({tbl['x'][i]: .5f}, {tbl['y'][i]: .5f}) arcsec")
-        print(f"  measured: ({mx: .5f}, {my: .5f}) arcsec")
-        print(f"  error:    ({np.abs(mx - tbl['x'][i]): .5f}, {np.abs(my - tbl['y'][i]): .5f}) arcsec")
+        print(f"  true:     ({tbl['x'][i] * 1000: .5f}, {tbl['y'][i] * 1000: .5f}) mas")
+        print(f"  measured: ({mx * 1000: .5f}, {my * 1000: .5f}) mas")
+        print(f"  error:    ({np.abs(mx - tbl['x'][i]) * 1000: .5f}, {np.abs(my - tbl['y'][i]) * 1000: .5f}) mas")
         print()
 
     print(f"Matched {len(dx)} stars")
-    print(f"Mean offset: ΔX = {np.mean(dx):.4f} ± {np.std(dx):.4f} arcsec")
-    print(f"             ΔY = {np.mean(dy):.4f} ± {np.std(dy):.4f} arcsec")
-    print(f"RMS error: {np.sqrt(np.mean(sep_ ** 2)):.4f} arcsec")
-    print(f"Median separation: {np.median(sep_):.4f} arcsec")
+    print(f"Mean offset: ΔX = {np.mean(dx) * 1000:.4f} ± {np.std(dx) * 1000:.4f} mas")
+    print(f"             ΔY = {np.mean(dy) * 1000:.4f} ± {np.std(dy) * 1000:.4f} mas")
+    print(f"RMS error: {np.sqrt(np.mean(sep_ ** 2)) * 1000:.4f} mas")
+    print(f"Median separation: {np.median(sep_) * 1000:.4f} mas")
 
     return measured_x, measured_y
 
@@ -265,14 +277,14 @@ def positionPolt(star_name=None, t_start=None, t_end=None):
     for val in idxs:
         x, y, z = orbitalPosition(t_plot, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val],
                                   Per_val[val])
-        sc = ax.scatter(x, y, marker='x', s=1, label=names_val[val])
+        sc = ax.scatter(x * 1000, y * 1000, marker='x', s=1, label=names_val[val])
         scatter_objects.append(sc)
 
     ax.scatter(0, 0, color='black', marker='+', s=80, zorder=5)
 
     ax.set_title(f'Calculated orbits  [{t_start}–{t_end}]')
-    ax.set_xlabel('R.A. ["]')
-    ax.set_ylabel('Dec. ["]')
+    ax.set_xlabel('R.A. [mas]')
+    ax.set_ylabel('Dec. [mas]')
     ax.invert_xaxis()
     ax.grid(True, alpha=0.3)
 
@@ -307,10 +319,10 @@ def velocityPlot(star_name=None, t_start=None, t_end=None):
     for val in idxs:
         v = orbitalVelocity(t_plot, a_val[val], e_val[val], i_val[val], Omega_val[val], w_val[val], Tp_val[val],
                             Per_val[val])
-        plt.plot(t_plot, v, label=names_val[val])
+        plt.plot(t_plot, v * 1000, label=names_val[val])
 
     plt.xlabel('t [yr]')
-    plt.ylabel(r'$v$ [km/s]')
+    plt.ylabel(r'$v$ [mas/yr]')
     plt.title(f'Orbital velocities [{t_start}–{t_end}]')
     if star_name and not (len(star_name) == 1 and star_name[0].lower() == "all"):
         plt.legend()
@@ -335,12 +347,12 @@ def comparePlot(star_name=None):
     line1_objects = []
 
     for i, (mx, my) in enumerate(zip(measured_x, measured_y)):
-        ax1 = ax.scatter(tbl['x'][i], tbl['y'][i], marker='+', label=tbl['ref'][i], color='grey')
-        ax2 = ax.scatter(mx, my, marker='x')
+        ax1 = ax.scatter(tbl['x'][i] * 1000, tbl['y'][i] * 1000, marker='+', label=tbl['ref'][i], color='grey')
+        ax2 = ax.scatter(mx * 1000, my * 1000, marker='x')
         line1_objects.append(ax2)
 
-    ax.set_xlabel('R.A. ["]')
-    ax.set_ylabel('Dec. ["]')
+    ax.set_xlabel('R.A. [mas]')
+    ax.set_ylabel('Dec. [mas]')
     ax.set_title(f'Calculated (+) vs Simulated (×)')
     ax.invert_xaxis()
     ax.grid(True, alpha=0.3)
@@ -425,9 +437,9 @@ def findPass(star_name, t_peri, r_peri, a, e, i, Omega, w, Tp, Per, passage_num=
         label += f"  (passage {passage_num})"
     print(f"\n--- {label} ---")
     print(f"  Time of closest approach  : {t_peri:.4f} yr  ({peri_date.strftime('%Y-%m-%d')})")
-    print(f"  Closest distance to centre: {r_peri:.5f} arcsec")
-    print(f"  Distance moved in +-1/2 week : {weekly_dist:.5f} arcsec")
-    print(f"  (dX={dx:.5f}, dY={dy:.5f}, dZ={dz:.5f}) arcsec")
+    print(f"  Closest distance to centre: {r_peri * 1000:.3f} mas")
+    print(f"  Distance moved in +-1/2 week : {weekly_dist * 1000:.3f} mas")
+    print(f"  (dX={dx * 1000:.3f}, dY={dy * 1000:.3f}, dZ={dz * 1000:.3f}) mas")
 
     return t_peri, r_peri, weekly_dist
 
@@ -552,9 +564,9 @@ def bestObserving(star_name, t_start, t_end):
 
     print(f"\n--- Best observing window: {star_name}  [{t_start:.2f} – {t_end:.2f}] ---")
     print(f"  Best time               : {t_best:.4f} yr  ({best_date.strftime('%Y-%m-%d')})")
-    print(f"  Distance at best time   : {r_best:.5f} arcsec")
-    print(f"  Distance moved in 1 week: {weekly_dist:.5f} arcsec")
-    print(f"  Distance range in window: min={r_best:.5f}  mean={r_mean:.5f}  max={r_max:.5f} arcsec")
+    print(f"  Distance at best time   : {r_best * 1000:.3f} mas")
+    print(f"  Distance moved in 1 week: {weekly_dist * 1000:.3f} mas")
+    print(f"  Distance range in window: min={r_best * 1000:.3f}  mean={r_mean * 1000:.3f}  max={r_max * 1000:.3f} mas")
 
     return t_best, r_best, weekly_dist
 
@@ -610,8 +622,8 @@ def orbitFit(star_name=None):
 
         x_ref_pix = im.shape[1] / 2
         y_ref_pix = im.shape[0] / 2
-        points[dt][0] = (sources['x'][0] - x_ref_pix) * PIXEL_SCALE
-        points[dt][1] = (sources['y'][0] - y_ref_pix) * PIXEL_SCALE
+        points[dt][0] = (sources['x'][0] - x_ref_pix) * PIXEL_SCALE * 1000 # mas
+        points[dt][1] = (sources['y'][0] - y_ref_pix) * PIXEL_SCALE * 1000 # mas
 
     x = points[:, 0]
     y = points[:, 1]
